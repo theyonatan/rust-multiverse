@@ -1,4 +1,5 @@
-﻿use std::sync::{Arc, Mutex};
+﻿use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -47,6 +48,8 @@ impl UniverseHandle {
             let universe = Arc::clone(&universe);
 
             move || loop {
+                // TODO: loop with tokio select over: command_rx and event_rx
+                
                 let given_command = rx.lock().unwrap().recv().unwrap();
                 println!("Given universe command: {:?}", given_command);
 
@@ -88,6 +91,8 @@ struct Universe {
     id: UniverseId,
     tick: u64,
     state: String,
+    enemies: HashSet<UniverseId>,
+    brothers: HashSet<UniverseId>,
     log: Vec<String>,
 }
 
@@ -99,7 +104,11 @@ impl Universe {
             id,
             tick: 0,
             state: "".to_string(),
+            enemies: Default::default(),
+            brothers: Default::default(),
             log: vec![],
+            
+            
         }
     }
 
