@@ -4,30 +4,30 @@ use std::thread;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 static NEXT_UNIVERSE_ID: AtomicUsize = AtomicUsize::new(1);
-
 pub type UniverseId = usize;
 
+#[derive(Debug)]
 enum UniverseEvent {
-    Tick(u64),
-    State(String),
-    Crash,
-    Ping(UniverseId),
-    Pong(UniverseId),
-    Shutdown,
+    ChangeState(String),
+    Shatter,                // damage the universe a bit
+    Crash(UniverseId),      // the universe is damaged so bad, it crashed. UniverseId must be "Enemy" for this to apply.
+    Ping(UniverseId),       // just sends a ping, expect a pong
+    Pong(UniverseId),       // after a ping, this is the response
+    Shutdown(UniverseId),   // same as crash but via force, UniverseId must be "brother" for this to apply.
 }
 
 #[derive(Debug)]
 pub enum UniverseCommand {
     Start,
     Stop,
-    InjectEvent(String),
-    RequestState(),
+    InjectEvent(UniverseEvent), // TODO: Supervisor sends an event to the Universe which he unpacks and deals with.
+    RequestState(), // TODO: Supervisor sends a request to get an event, the Universe somehow returns a response.
 }
 
 
 
 pub struct UniverseHandle {
-    id: UniverseId,
+    universe: Arc<Mutex<Universe>>,
     pub(crate) commander: std::sync::mpsc::SyncSender<UniverseCommand>,
     events_receiver: std::sync::mpsc::Receiver<UniverseEvent>,
     pub(crate) universe_thread: std::thread::JoinHandle<()>,
@@ -70,7 +70,7 @@ impl UniverseHandle {
         });
 
         UniverseHandle {
-            id: universe.lock().unwrap().id,
+            universe,
             commander: apply_universe_command_tx,
             events_receiver: router_from_universe_rx,
             universe_thread: handle,
