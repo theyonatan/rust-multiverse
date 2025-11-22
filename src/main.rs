@@ -1,14 +1,13 @@
 mod universe;
+mod supervisor;
 
-use universe::{create_universe, UniverseCommand, SupervisorHandle, UserSupervisor};
-
-
+use supervisor::supervisor::UserSupervisor;
 #[tokio::main]
 async fn main() {
     println!("Hello, world!");
 
     let mut user_supervisor = UserSupervisor::new();
-    
+
     user_supervisor.main_loop().await;
 }
 
