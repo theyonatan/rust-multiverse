@@ -1,9 +1,8 @@
 ﻿use std::collections::HashMap;
-use std::io;
-use tokio::io::AsyncBufReadExt;
+use crate::supervisor::menu_items::*;
 use crate::supervisor::error::UniverseLookupError;
 use crate::universe;
-use crate::universe::{UniverseCommand, UniverseHandle, UniverseId};
+use crate::universe::{UniverseCommand, UniverseHandle, UniverseId, UniverseEvent};
 
 pub struct UserSupervisor {
     supervisor: SupervisorHandle,
@@ -17,79 +16,155 @@ impl UserSupervisor {
     }
 
     pub async fn main_loop(&mut self) {
-        // todo: create supervisor
+        // todo: change good morning to be good - anything
+        println!("Good Morning - Supervisor Initialized.");
 
-        // todo: collect input from user
         loop {
-            let should_shutdown = self.ask_for_input_commands().await;
+            print_main_menu();
 
-            if should_shutdown {
-                break;
+            let input = match menu_read_input().await {
+                Ok(input) => input,
+                Err(_) => continue,
+            };
+
+            // Normalize input for matching key main menu words
+            match input.trim().to_lowercase().as_str() {
+                "new" => self.new_universe().await,
+                "get" => self.handle_list_universes(),
+                "command" => self.handle_manage_universe().await,
+                "shutdown" | "exit" => {
+                    println!("Shutting down system...");
+                    self.shut_down_all().await;
+                    break;
+                }
+                _ => println!("Unknown option. Please type 'New', 'Get', 'Command', or 'Shutdown'."),
             }
-
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
         self.supervisor.wait_for_all_tasks_to_finish().await;
     }
 
-    async fn ask_for_input_commands(&mut self) -> bool {
-        println!("Enter universe command:");
-        println!("Start");
-        println!("Stop");
-        println!("do_event");
-        println!("request_state");
-        println!("Shutdown");
+    // --- Sub-Menus ---
+    async fn handle_manage_universe(&mut self) {
+        let name = menu_request_universe_name("Manage").await;
+        if name.is_empty() { return; }
 
-        let input = match self.read_input().await {
-            Ok(u) => u,
-            Err(e) => {
-                eprintln!("Error reading input: {}", e);
+        // Verify existence before entering loop
+        if self.supervisor.get_universe_handle_by_name(&name).is_err() {
+            println!("Universe '{}' not found.", name);
+            return;
+        }
 
-                // it's ok, just recollect input again.
-                return false;
+        loop {
+            print_command_menu(&name);
+            let input = match menu_read_input().await {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            // Special navigation commands
+            match input.trim().to_lowercase().as_str() {
+                "back" => break,
+                "event" | "do_event" => {
+                    self.handle_event_menu(&name).await;
+                    continue;
+                }
+                _ => {} // Fall through to standard command parsing
             }
-        };
 
-        self.activate_input_commands(input).await;
+            // Use the existing From<&String> implementation
+            // This handles Start, Stop, Shutdown, RequestState
+            let command = UniverseCommand::from(&input);
 
-        false
+            match command {
+                UniverseCommand::UnknownCommand => {
+                    println!("Unknown command. Type 'Start', 'Stop', 'Event', 'State', or 'Shutdown'.");
+                }
+                UniverseCommand::Shutdown => {
+                    // Send shutdown and exit this menu because the universe will be gone
+                    self.supervisor.send_universe_command(name.clone(), command).await;
+
+                    let id = self.supervisor.get_universe_handle_by_name(&name).unwrap().handle_id;
+                    self.supervisor.universes_via_name.remove(&name);
+                    self.supervisor.existing_universes.remove(&id);
+
+                    println!("Exiting management for '{}'", name);
+                    break;
+                }
+                _ => {
+                    self.supervisor.send_universe_command(name.clone(), command).await;
+                }
+            }
+        }
     }
 
-    async fn read_input(&mut self) -> Result<String, io::Error> {
-        let mut line = String::new();
 
-        tokio::io::BufReader::new(tokio::io::stdin()).read_line(&mut line).await?;
 
-        Ok(line.trim_end().to_string())
+    async fn handle_event_menu(&self, name: &str) {
+        loop {
+            print_event_menu(name);
+            let input = match menu_read_input().await {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let trimmed = input.trim();
+
+            // Navigation
+            if trimmed.eq_ignore_ascii_case("back") {
+                break;
+            }
+
+            // Special Case: ChangeState requires specific input that the "From" impl
+            // in universe_event.rs doesn't capture separately (it just clones the command name).
+            // We handle it manually here for better UX.
+            if trimmed.eq_ignore_ascii_case("changestate") {
+                println!("Enter new state string:");
+                let state_val = menu_read_input().await.unwrap_or_default();
+                let event = UniverseEvent::ChangeState(state_val);
+                self.supervisor.send_universe_command(name.to_string(), UniverseCommand::InjectEvent(event)).await;
+                continue;
+            }
+
+            // General Case: Use existing From implementation
+            // This handles Shatter, Crash, Heal, Ping, Pong
+            let event = UniverseEvent::from(&input);
+
+            match event {
+                UniverseEvent::Empty => println!("Invalid event name."),
+                _ => {
+                    let command = UniverseCommand::InjectEvent(event);
+                    self.supervisor.send_universe_command(name.to_string(), command).await;
+                }
+            }
+        }
     }
 
-    async fn activate_input_commands(&mut self, input: String) {
-        let command: UniverseCommand = UniverseCommand::from(&input);
+    // --- Helpers ---
+    async fn new_universe(&mut self) {
+        let name = menu_request_universe_name("Create").await;
+        if name.is_empty() { return; }
 
-        // todo: get universe name
-
-        // todo: new menu: new universe, get existing, send command
-        // new universe: enter name
-        // get existing: print all
-
-        // send command: request name
-        // request command
-
-        // inside command possibly request event.
-
-        // self.supervisor.send_universe_command("Universe 1".to_string(), UniverseCommand::Shutdown).await;
+        self.supervisor.add_new_universe(name.clone());
+        println!("Universe '{}' created.", name);
     }
 
-    async fn activate_input_events(&mut self) {
-
+    fn handle_list_universes(&self) {
+        println!("\n--- Existing Universes ---");
+        let universes = self.supervisor.get_all_existing_universes();
+        if universes.is_empty() {
+            println!("(No universes found)");
+        } else {
+            for name in universes {
+                println!("- {}", name);
+            }
+        }
     }
 
-    fn new_universe(&mut self) {
-        // todo: input name
-        let name = "".to_string();
-
-        self.supervisor.add_new_universe("Universe 1".to_string());
+    async fn shut_down_all(&mut self) {
+        for (universe_name, _universe) in self.supervisor.universes_via_name.iter() {
+            self.supervisor.send_universe_command(universe_name.clone(), UniverseCommand::Shutdown).await;
+        }
     }
 }
 
