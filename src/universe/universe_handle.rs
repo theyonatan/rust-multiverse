@@ -18,12 +18,12 @@ impl UniverseHandle {
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<UniverseEvent>();
 
         let universe_task_handle = tokio::spawn(async move{
-            println!("Spawned universe async instance!");
+            // todo: move to logger: println!("Spawned universe async instance!");
 
             loop {
                 tokio::select! {
                     Some(command) = command_rx.recv() => {
-                        println!("Given universe command: {:?}", command);
+                        // todo: move to logger: println!("Given universe command: {:?}", command);
                         match command {
                             UniverseCommand::Start => {
                                 // todo - universe starts doing .step only if universe.activated
@@ -53,7 +53,7 @@ impl UniverseHandle {
                                 // better shutdown, although this might really be best.
                                 // maybe a shutdown function which does universe.shut_down_next_tick = true;
                                 // then later bellow actually shut down
-                                // and with that function, I can also clean up stuff if I need to.
+                                // and with that function, I can also clean up stuff if I need to. if I even need to.
                             }
                             UniverseCommand::UnknownCommand => {
 
@@ -63,8 +63,6 @@ impl UniverseHandle {
 
                     Some(event) = event_rx.recv() => {
                         // todo: universe events
-                        // think about different events in universe,
-                        // probably damage enemies and heal brothers
                     }
                 }
 

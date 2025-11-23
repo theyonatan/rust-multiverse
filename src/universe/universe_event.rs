@@ -6,6 +6,7 @@ pub enum UniverseEvent {
     ChangeState(String),
     Shatter,                // damage the universe a bit
     Crash(UniverseId),      // the universe is damaged so bad, it crashed. UniverseId must be "Enemy" for this to apply.
+    Heal(UniverseId),       // heals universe. UniverseId must be "brother" for this to apply.
     Ping(UniverseId),       // just sends a ping, expect a pong
     Pong(UniverseId),       // after a ping, this is the response
     Shutdown(UniverseId),   // same as crash but via force, UniverseId must be "brother" for this to apply.
