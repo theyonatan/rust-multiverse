@@ -1,26 +1,40 @@
 ﻿use crate::universe::id::UniverseId;
+use crossterm::style::Color; // Add this dependency
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UniverseEvent {
     Empty,
-    ChangeState(String),
-    Shatter,                // damage the universe a bit
-    Crash(UniverseId),      // the universe is damaged so bad, it crashed. UniverseId must be "Enemy" for this to apply.
-    Heal(UniverseId),       // heals universe. UniverseId must be "brother" for this to apply.
-    Ping(UniverseId),       // just sends a ping, expect a pong
-    Pong(UniverseId),       // after a ping, this is the response
-    Shutdown(UniverseId),   // same as crash but via force, UniverseId must be "brother" for this to apply.
+    ChangeState,
+    Shatter(u32),        // Now carries damage
+    Heal(u32),
+    PeerDied,
+    Crash(UniverseId),
+    Ping,
+    Pong,
+    Shutdown,
 }
+
+
+#[derive(Debug)]
+pub enum UniverseOutboundEvent {
+    // Modified to carry visual info
+    Log { name: String, color: Color, message: String },
+    MessagePeer { target_id: UniverseId, event: UniverseEvent },
+    BroadcastDeath(UniverseId),
+    BroadcastPeerDied(UniverseId), // name of the dead one
+}
+
+// ... rest is same
 
 impl From<&String> for UniverseEvent {
     fn from(s: &String) -> Self {
         match s.to_lowercase().as_str() {
-            "ChangeState" => UniverseEvent::ChangeState(s.clone()),
-            "Shatter" => UniverseEvent::Shatter,
-            "Crash" => UniverseEvent::Crash(0),
-            "Ping" => UniverseEvent::Ping(0),
-            "Pong" => UniverseEvent::Pong(0),
-            "Shutdown" => UniverseEvent::Shutdown(0),
+            "changestate" => UniverseEvent::ChangeState,
+            "shatter" => UniverseEvent::Shatter(10),
+            "crash" => UniverseEvent::Crash(0),
+            "ping" => UniverseEvent::Ping,
+            "pong" => UniverseEvent::Pong,
+            "shutdown" => UniverseEvent::Shutdown,
             _ => UniverseEvent::Empty,
         }
     }

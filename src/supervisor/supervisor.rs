@@ -1,231 +1,159 @@
 ﻿use std::collections::HashMap;
-use crate::supervisor::menu_items::*;
-use crate::supervisor::error::UniverseLookupError;
-use crate::universe;
-use crate::universe::{UniverseCommand, UniverseHandle, UniverseId, UniverseEvent};
-
-pub struct UserSupervisor {
-    supervisor: SupervisorHandle,
-}
-
-impl UserSupervisor {
-    pub fn new() -> Self {
-        UserSupervisor {
-            supervisor: SupervisorHandle::new(),
-        }
-    }
-
-    pub async fn main_loop(&mut self) {
-        // todo: change good morning to be good - anything
-        println!("Good Morning - Supervisor Initialized.");
-
-        loop {
-            print_main_menu();
-
-            let input = match menu_read_input().await {
-                Ok(input) => input,
-                Err(_) => continue,
-            };
-
-            // Normalize input for matching key main menu words
-            match input.trim().to_lowercase().as_str() {
-                "new" => self.new_universe().await,
-                "get" => self.handle_list_universes(),
-                "command" => self.handle_manage_universe().await,
-                "shutdown" | "exit" => {
-                    println!("Shutting down system...");
-                    self.shut_down_all().await;
-                    break;
-                }
-                _ => println!("Unknown option. Please type 'New', 'Get', 'Command', or 'Shutdown'."),
-            }
-        }
-
-        self.supervisor.wait_for_all_tasks_to_finish().await;
-    }
-
-    // --- Sub-Menus ---
-    async fn handle_manage_universe(&mut self) {
-        let name = menu_request_universe_name("Manage").await;
-        if name.is_empty() { return; }
-
-        // Verify existence before entering loop
-        if self.supervisor.get_universe_handle_by_name(&name).is_err() {
-            println!("Universe '{}' not found.", name);
-            return;
-        }
-
-        loop {
-            print_command_menu(&name);
-            let input = match menu_read_input().await {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            // Special navigation commands
-            match input.trim().to_lowercase().as_str() {
-                "back" => break,
-                "event" | "do_event" => {
-                    self.handle_event_menu(&name).await;
-                    continue;
-                }
-                _ => {} // Fall through to standard command parsing
-            }
-
-            // Use the existing From<&String> implementation
-            // This handles Start, Stop, Shutdown, RequestState
-            let command = UniverseCommand::from(&input);
-
-            match command {
-                UniverseCommand::UnknownCommand => {
-                    println!("Unknown command. Type 'Start', 'Stop', 'Event', 'State', or 'Shutdown'.");
-                }
-                UniverseCommand::Shutdown => {
-                    // Send shutdown and exit this menu because the universe will be gone
-                    self.supervisor.send_universe_command(name.clone(), command).await;
-
-                    let id = self.supervisor.get_universe_handle_by_name(&name).unwrap().handle_id;
-                    self.supervisor.universes_via_name.remove(&name);
-                    self.supervisor.existing_universes.remove(&id);
-
-                    println!("Exiting management for '{}'", name);
-                    break;
-                }
-                _ => {
-                    self.supervisor.send_universe_command(name.clone(), command).await;
-                }
-            }
-        }
-    }
-
-
-
-    async fn handle_event_menu(&self, name: &str) {
-        loop {
-            print_event_menu(name);
-            let input = match menu_read_input().await {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            let trimmed = input.trim();
-
-            // Navigation
-            if trimmed.eq_ignore_ascii_case("back") {
-                break;
-            }
-
-            // Special Case: ChangeState requires specific input that the "From" impl
-            // in universe_event.rs doesn't capture separately (it just clones the command name).
-            // We handle it manually here for better UX.
-            if trimmed.eq_ignore_ascii_case("changestate") {
-                println!("Enter new state string:");
-                let state_val = menu_read_input().await.unwrap_or_default();
-                let event = UniverseEvent::ChangeState(state_val);
-                self.supervisor.send_universe_command(name.to_string(), UniverseCommand::InjectEvent(event)).await;
-                continue;
-            }
-
-            // General Case: Use existing From implementation
-            // This handles Shatter, Crash, Heal, Ping, Pong
-            let event = UniverseEvent::from(&input);
-
-            match event {
-                UniverseEvent::Empty => println!("Invalid event name."),
-                _ => {
-                    let command = UniverseCommand::InjectEvent(event);
-                    self.supervisor.send_universe_command(name.to_string(), command).await;
-                }
-            }
-        }
-    }
-
-    // --- Helpers ---
-    async fn new_universe(&mut self) {
-        let name = menu_request_universe_name("Create").await;
-        if name.is_empty() { return; }
-
-        self.supervisor.add_new_universe(name.clone());
-        println!("Universe '{}' created.", name);
-    }
-
-    fn handle_list_universes(&self) {
-        println!("\n--- Existing Universes ---");
-        let universes = self.supervisor.get_all_existing_universes();
-        if universes.is_empty() {
-            println!("(No universes found)");
-        } else {
-            for name in universes {
-                println!("- {}", name);
-            }
-        }
-    }
-
-    async fn shut_down_all(&mut self) {
-        for (universe_name, _universe) in self.supervisor.universes_via_name.iter() {
-            self.supervisor.send_universe_command(universe_name.clone(), UniverseCommand::Shutdown).await;
-        }
-    }
-}
+use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel, Sender};
+use crate::universe::universe_event::UniverseOutboundEvent;
+use crate::universe::{self, UniverseCommand, UniverseEvent, UniverseHandle, UniverseId};
+use crate::universe::logger::LogMessage;
 
 pub struct SupervisorHandle {
     existing_universes: HashMap<UniverseId, UniverseHandle>,
     universes_via_name: HashMap<String, UniverseId>,
+
+    universe_hp: HashMap<UniverseId, i32>,
+    
+    global_tx: UnboundedSender<UniverseOutboundEvent>,
+    _global_tx: UnboundedSender<UniverseOutboundEvent>, // keep alive
+    global_rx: Option<UnboundedReceiver<UniverseOutboundEvent>>,
+
+    // Channel to send logs back to the UI
+    logger_tx: UnboundedSender<LogMessage>,
+
+    // Internal Router
+    router_tx: Option<UnboundedSender<(UniverseId, Sender<UniverseCommand>)>>,
 }
 
 impl SupervisorHandle {
-    pub fn new() -> SupervisorHandle {
+    pub fn new(logger_tx: UnboundedSender<LogMessage>) -> SupervisorHandle {
+        let (global_tx, global_rx) = unbounded_channel();
         SupervisorHandle {
             existing_universes: HashMap::new(),
             universes_via_name: HashMap::new(),
+            universe_hp: HashMap::new(),
+            _global_tx: global_tx.clone(),
+            global_tx,
+            global_rx: Some(global_rx),
+            logger_tx,
+            router_tx: None,
         }
     }
 
-    fn get_universe_handle_by_name(
-        &self,
-        name: &str
-    ) -> Result<&UniverseHandle, UniverseLookupError> {
-        let universe_id = self
-            .universes_via_name
-            .get(name)
-            .ok_or_else(|| UniverseLookupError::IdNotFoundForName(name.to_string()))?;
+    pub fn start(&mut self) {
+        let (router_tx, mut router_rx) = unbounded_channel::<(UniverseId, Sender<UniverseCommand>)>();
+        self.router_tx = Some(router_tx);
 
-        self.existing_universes
-            .get(universe_id)
-            .ok_or_else(|| UniverseLookupError::UniverseNotFoundForId(universe_id.clone()))
-    }
+        let mut global_rx = self.global_rx.take().unwrap();
+        let logger_tx = self.logger_tx.clone();
 
-    pub fn get_all_existing_universes(&self) -> Vec<&String> {
-        self.universes_via_name.keys().collect()
-    }
-    pub fn add_new_universe(&mut self, name: String) {
-        // new universe
-        let universe_handle = universe::create_universe_handle();
+        // We need a way to mutate the supervisor state from the async loop,
+        // but we can't share `self`.
+        // Instead, the router handles routing, and we handle structure updates via `remove_universe`.
+        // But since the router runs in a spawn, it can't mutate `SupervisorHandle`.
+        // SOLUTION: The Router detects Death, logs it, but we need a way to clean up `existing_universes`.
+        // For this simple architecture, we will let the router run independently,
+        // but we will create a separate command channel for internal cleanup if we wanted 100% purity.
+        // HOWEVER, to fix the "fighting after death" bug, we just need to ensure the router stops routing to dead IDs.
 
-        // add to universe db
-        (&mut self.universes_via_name).insert(name, universe_handle.handle_id.clone());
-        (&mut self.existing_universes).insert(universe_handle.handle_id.clone(), universe_handle);
-    }
+        tokio::spawn(async move {
+            let mut routes: HashMap<UniverseId, Sender<UniverseCommand>> = HashMap::new();
 
-    pub async fn send_universe_command(&self, universe_name: String, command: UniverseCommand) {
-        // get universe
-        let universe = match self.get_universe_handle_by_name(&universe_name) {
-            Ok(u) => u,
-            Err(e) => {
-                eprintln!("Lookup error: {}", e);
-                return;
+            loop {
+                tokio::select! {
+            Some((id, tx)) = router_rx.recv() => {
+                routes.insert(id, tx);
             }
-        };
-
-        // use universe to send command
-        if let Err(e) = universe.commander_tx.send(command).await {
-            eprintln!("Failed to send command: {}", e);
+            Some(event) = global_rx.recv() => {
+                match event {
+                    UniverseOutboundEvent::Log { name, color, message } => {
+                        let _ = logger_tx.send(LogMessage::UniverseLog { name, color, message });
+                    }
+                    UniverseOutboundEvent::BroadcastDeath(dead_id) => {
+                        let _ = logger_tx.send(LogMessage::Info(format!("SYSTEM: Universe {} died.", dead_id)));
+                        routes.remove(&dead_id);
+                    }
+                    UniverseOutboundEvent::BroadcastPeerDied(dead_id) => {
+                        // Forward to all living universes
+                        for (&id, tx) in routes.iter() {
+                            if id != dead_id {
+                                let _ = tx.send(UniverseCommand::InjectEvent(
+                                    UniverseEvent::PeerDied
+                                ));
+                            }
+                        }
+                    }
+                    UniverseOutboundEvent::MessagePeer { target_id, event } => {
+                        if let Some(tx) = routes.get(&target_id) {
+                            let _ = tx.send(UniverseCommand::InjectEvent(event));
+                        }
+                    }
+                }
+            }
+            else => {
+                // Both channels closed → supervisor is shutting down
+                break;
+            }
         }
+            }
+        });
     }
 
-    pub async fn wait_for_all_tasks_to_finish(&mut self) {
-        for (_id, universe) in self.existing_universes.drain() {
-            let _ = universe.universe_task_handle.await;
+    pub async fn add_new_universe(&mut self, name: String) {
+        if self.universes_via_name.contains_key(&name) { return; }
+
+        let universe_handle = universe::create_universe_handle(
+            name.clone(),
+            self.global_tx.clone(),
+            self.logger_tx.clone()
+        );
+
+        let id = universe_handle.handle_id;
+        let cmd_tx = universe_handle.commander_tx.clone();
+
+        // 1. Register with Router
+        if let Some(router) = &self.router_tx {
+            let _ = router.send((id, cmd_tx.clone()));
+        }
+
+        // 2. Introduce to existing peers
+        for (existing_name, existing_id) in &self.universes_via_name {
+            // Tell new about old
+            let _ = cmd_tx.send(UniverseCommand::MeetPeer { id: *existing_id, name: existing_name.clone() }).await;
+
+            // Tell old about new (We need to find the handle)
+            if let Some(handle) = self.existing_universes.get(existing_id) {
+                let _ = handle.commander_tx.send(UniverseCommand::MeetPeer { id, name: name.clone() }).await;
+            }
+        }
+
+        // 3. Store
+        self.universes_via_name.insert(name.clone(), id);
+        self.existing_universes.insert(id, universe_handle);
+        self.universe_hp.insert(id, 100);
+
+        let _ = self.logger_tx.send(LogMessage::Info(format!("Created universe '{}' (ID: {})", name, id)));
+    }
+
+    pub fn exists(&self, name: &str) -> bool {
+        self.universes_via_name.contains_key(name)
+    }
+
+    pub fn get_all_existing_universes(&self) -> Vec<String> {
+        self.universes_via_name.keys().cloned().collect()
+    }
+
+    pub async fn send_universe_command(&mut self, name: String, command: UniverseCommand) {
+        // Check for shutdown command to clean up local map
+        let is_shutdown = matches!(command, UniverseCommand::Shutdown);
+
+        if let Some(id) = self.universes_via_name.get(&name) {
+            if let Some(u) = self.existing_universes.get(id) {
+                let _ = u.commander_tx.send(command).await;
+            }
+
+            // If we manually shut it down, remove it from our lists
+            if is_shutdown {
+                let id_copy = *id;
+                self.existing_universes.remove(&id_copy);
+                self.universes_via_name.remove(&name);
+            }
         }
     }
 }
