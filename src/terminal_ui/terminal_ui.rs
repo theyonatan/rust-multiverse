@@ -194,7 +194,7 @@ impl<'a> TerminalUI<'a> {
                 self.log(format!("Universes: {:?}", list));
             }
             "shutdown" => return true,
-            _ => self.log("Unknown command. Type 'new', 'list', 'manage <name>', or 'shutdown'".into()),
+            _ => self.log(format!("Unknown command: '{}'", parts[0]))
         }
         false
     }
