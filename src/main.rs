@@ -1,9 +1,11 @@
 mod universe;
 mod supervisor;
 mod terminal_ui;
+mod logging;
+
 use terminal_ui::TerminalUI;
 
-use supervisor::supervisor::UserSupervisor;
+use supervisor::user_supervisor::UserSupervisor;
 
 #[tokio::main]
 async fn main() {

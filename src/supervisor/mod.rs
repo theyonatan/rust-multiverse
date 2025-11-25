@@ -1,3 +1,3 @@
 ﻿pub mod error;
 pub mod supervisor;
-pub mod menu_items;
+pub(crate) mod user_supervisor;
