@@ -10,7 +10,9 @@ use crossterm::{
     terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::{self, Stdout};
-
+use tokio::sync::broadcast::Receiver;
+use crate::logging::subscribe;
+use crate::supervisor::log_messages::*;
 use crate::supervisor::user_supervisor::UserSupervisor;
 use crate::universe::{UniverseCommand, UniverseEvent};
 
@@ -18,6 +20,7 @@ pub struct TerminalUI<'a> {
     supervisor: &'a mut UserSupervisor,
     input: String,
     logs: Vec<String>,
+    log_receiver: Receiver<String>,
     mode: UiMode,
     log_state: ListState,
 }
@@ -37,6 +40,7 @@ impl<'a> TerminalUI<'a> {
             supervisor,
             input: String::new(),
             logs: vec![],
+            log_receiver: subscribe(),
             mode: UiMode::Main,
             log_state,
         }
@@ -46,14 +50,28 @@ impl<'a> TerminalUI<'a> {
         let mut terminal = self.init_terminal();
 
         loop {
+            // draw terminal
             self.draw(&mut terminal);
             if let Some(cmd) = self.poll_input().unwrap() {
                 if self.handle_input(cmd).await {
                     break;
                 }
             }
+
+            // collect logs for terminal
+            while let Ok(line) = self.log_receiver.try_recv() {
+                self.logs.push(line);
+                if self.logs.len() > 300 {
+                    self.logs.remove(0);
+                }
+            }
+
+            // process any incoming universe events (intents)
+            self.supervisor.process_universe_events().await;
         }
 
+        // end of program, shutdown all universes and clean terminal
+        self.supervisor.shut_down_all().await;
         self.shutdown_terminal(&mut terminal);
     }
 
@@ -94,10 +112,10 @@ impl<'a> TerminalUI<'a> {
             let log_items: Vec<ListItem> = self
                 .logs
                 .iter()
-                .map(|l| ListItem::new(l.clone()))
+                .map(|line| ListItem::new(line.as_str()))
                 .collect();
 
-            let mut list = List::new(log_items)
+            let list = List::new(log_items)
                 .block(Block::default().borders(Borders::ALL).title("Logs"));
 
             // Keep selection at the bottom (newest entry)
@@ -173,30 +191,29 @@ impl<'a> TerminalUI<'a> {
                 if parts.len() > 1 {
                     let name = parts[1].trim().to_string();
                     if name.is_empty() {
-                        self.log("Name cannot be empty".into());
+                        Log::info("Name cannot be empty");
                     } else {
                         self.supervisor.new_universe(name.clone()).await;
-                        self.log(format!("Created universe '{}'", name));
                     }
                 } else {
-                    self.log("Usage: new <name>".into());
+                    Log::info("Usage: new <name>");
                 }
             }
             "manage" => {
                 if parts.len() > 1 {
                     let name = parts[1].trim().to_string();
-                    self.log(format!("Now managing '{}'", name));
+                    Log::info(format!("Now managing '{}'", name));
                     self.mode = UiMode::Manage { name };
                 } else {
-                    self.log("Usage: manage <name>".into());
+                    Log::info("Usage: manage <name>");
                 }
             }
             "list" => {
                 let list = self.supervisor.get_list_universes();
-                self.log(format!("Universes: {:?}", list));
+                Log::info(format!("Universes: {:?}", list));
             }
             "shutdown" => return true,
-            _ => self.log(format!("Unknown command: '{}'", parts[0]))
+            _ => Log::info(format!("Unknown command: '{}'", parts[0]))
         }
         false
     }
@@ -205,67 +222,65 @@ impl<'a> TerminalUI<'a> {
         match p[0].to_lowercase().as_str() {
             "back" => self.mode = UiMode::Main,
             "resume" => {
-                self.log(format!("Resuming {}", name));
+                Log::info(format!("Resuming {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Start).await;
             }
             "pause" => {
-                self.log(format!("Pausing {}", name));
+                Log::info(format!("Pausing {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Stop).await;
             }
             "event" => self.mode = UiMode::EventMenu { name },
             "state" => {
-                self.log(format!("Getting State of {}", name));
+                Log::info(format!("Getting State of {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::RequestState()).await;
             }
             "collapse" => {
-                self.log(format!("Collapsing {}", name));
+                Log::info(format!("Collapsing {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Shutdown).await;
             }
-            _ => self.log("Unknown manage command".into()),
+            _ => Log::info("Unknown manage command"),
         }
         false
     }
 
     async fn handle_user_event(&mut self, name: String, p: Vec<&str>) -> bool {
+        // get user handle for logs color
+        let universe_color = self.supervisor.supervisor.existing_universes
+            .get(&self.supervisor.supervisor.universes_via_name[&name])
+            .unwrap().color;
+
         match p[0].to_lowercase().as_str() {
             "back" => self.mode = UiMode::Manage { name },
             "shatter" => {
                 let strength = 20;
-                
-                // todo: log user shattered universe {}
+
+                Log::user_action("You", "shattered", &name, universe_color);
 
                 self.supervisor.supervisor.send_universe_command(
                     name.clone(),
                     UniverseCommand::InjectEvent(UniverseEvent::Shatter(strength)),
                 ).await;
             }
-            "crash" => {
-                // todo: log user crashed universe {}
-
-                self.supervisor.supervisor.send_universe_command(
-                    name.clone(),
-                    UniverseCommand::InjectEvent(UniverseEvent::Crash),
-                ).await;
-            }
             "heal" => {
                 let strength = 20;
-                
-                // todo: log user healed universe {}
+
+                Log::user_action("You", "healed", &name, universe_color);
 
                 self.supervisor.supervisor.send_universe_command(
                     name.clone(),
                     UniverseCommand::InjectEvent(UniverseEvent::Heal(strength)),
                 ).await;
             }
-            _ => self.log("Unknown event command".into()),
+            "crash" => {
+                Log::user_action("You", "CRASHED", &name, universe_color);
+
+                self.supervisor.supervisor.send_universe_command(
+                    name.clone(),
+                    UniverseCommand::InjectEvent(UniverseEvent::Crash),
+                ).await;
+            }
+            _ => Log::info("Unknown event command"),
         }
         false
-    }
-
-    fn log(&mut self, msg: String) {
-        self.logs.push(msg);
-        if self.logs.len() > 300 {
-            self.logs.remove(0);
-        }
     }
 }

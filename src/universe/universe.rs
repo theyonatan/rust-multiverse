@@ -65,7 +65,16 @@ impl Universe {
     // helper utils for fighting stuff
     pub fn take_damage(&mut self, amount: i32) {
         self.hp -= amount;
-        if self.hp < 0 { self.hp = 0; }
+        if self.hp < 0 {
+            self.hp = 0;
+
+            self.collapse();
+        }
+    }
+
+    fn collapse(&mut self) {
+        self.executes = false;
+        let _ = self.intent_tx.send(UniverseIntent::Dead { target: self.id });
     }
 
     pub fn heal(&mut self, amount: i32) {

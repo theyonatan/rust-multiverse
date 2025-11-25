@@ -1,6 +1,6 @@
 ﻿use std::collections::HashMap;
 use rgb::RGB8;
-use crate::logging::log;
+use crate::supervisor::log_messages::Log;
 use crate::supervisor::error::UniverseLookupError;
 use crate::universe;
 use crate::universe::{UniverseCommand, UniverseEvent, UniverseHandle, UniverseId};
@@ -51,12 +51,25 @@ impl SupervisorHandle {
         self.universes_via_name.keys().collect()
     }
 
+    fn get_color_by_id(&self, id: &UniverseId) -> RGB8 {
+        self.existing_universes
+            .get(id)
+            .map(|h| h.color)
+            .unwrap_or(RGB8::new(255, 255, 255))
+    }
+
     ///------------------------
     /// manage from UI
     ///------------------------
-    pub fn add_new_universe(&mut self, name: String) {
+    pub async fn add_new_universe(&mut self, name: String) {
         // new universe
         let universe_handle = universe::create_universe_handle();
+
+        // Log
+        Log::created(&name, universe_handle.color);
+
+        // declare brothers or enemies
+        self.roll_brothers_enemies_on_new_universe(&universe_handle).await;
 
         // add to universe db
         (&mut self.universes_via_name).insert(name, universe_handle.handle_id.clone());
@@ -67,15 +80,15 @@ impl SupervisorHandle {
         // get universe
         let universe = match self.get_universe_handle_by_name(&universe_name) {
             Ok(u) => u,
-            Err(e) => {
-                // eprintln!("Lookup error: {}", e);
+            Err(_e) => {
+                // eprintln!("Lookup error: {}", _e);
                 return;
             }
         };
 
         // use universe to send command
-        if let Err(e) = universe.commander_tx.send(command).await {
-            // eprintln!("Failed to send command: {}", e);
+        if let Err(_e) = universe.commander_tx.send(command).await {
+            // eprintln!("Failed to send command: {}", _e);
         }
     }
 
@@ -84,18 +97,15 @@ impl SupervisorHandle {
     ///------------------------
 
     pub async fn process_intent(&mut self, source_id: UniverseId, intent: UniverseIntent) {
-        // get universe name via id
-        let source_name = self.get_universe_name_by_id(&source_id);
-
         match intent {
             UniverseIntent::Attack { target, damage } => {
-                self.attack_intent(source_name, target, damage).await;
+                self.attack_intent(source_id, target, damage).await;
             }
             UniverseIntent::Heal { target, amount } => {
-                self.heal_intent(source_name, target, amount).await;
+                self.heal_intent(source_id, target, amount).await;
             }
             UniverseIntent::Dead { target } => {
-                self.kill_intent(source_name, target).await;
+                self.collapsed_intent(target).await;
             }
         }
     }
@@ -103,52 +113,85 @@ impl SupervisorHandle {
     /// -----------------
     /// helpers
     /// -----------------
-    pub async fn attack_intent(&mut self, source_name: String, target_id: UniverseId, damage: i32) {
+    pub async fn attack_intent(
+        &mut self,
+        source_id: UniverseId,
+        target_id: UniverseId,
+        damage: i32) {
+        // log attack
+        let source_name = self.get_universe_name_by_id(&source_id);
         let target_name = self.get_universe_name_by_id(&target_id);
+        let source_handle = self.existing_universes.get(&source_id).unwrap();
+        let target_handle = self.existing_universes.get(&target_id).unwrap();
 
+        Log::attack(&source_name, source_handle.color, &target_name, target_handle.color, damage);
+
+        // send the universe shatter command
         self.send_universe_command(target_name, UniverseCommand::InjectEvent(UniverseEvent::Shatter(damage))).await;
-
-        // todo: log(format!("[{}] attacked [{}] -{} HP", source_name, target_name, damage), Some(*color));
     }
 
-    pub async fn heal_intent(&mut self, source_name: String, target_id: UniverseId, amount: i32) {
+    pub async fn heal_intent(
+        &mut self,
+        source_id: UniverseId,
+        target_id: UniverseId,
+        amount: i32) {
+        // log attack
+        let source_name = self.get_universe_name_by_id(&source_id);
         let target_name = self.get_universe_name_by_id(&target_id);
+        let source_handle = self.existing_universes.get(&source_id).unwrap();
+        let target_handle = self.existing_universes.get(&target_id).unwrap();
 
+        Log::heal(&source_name, source_handle.color, &target_name, target_handle.color, amount);
+
+        // send the universe heal command
         self.send_universe_command(target_name, UniverseCommand::InjectEvent(UniverseEvent::Heal(amount))).await;
-
-        // todo: log(format!("[{}] attacked [{}] -{} HP", source_name, target_name, damage), Some(*color));
     }
 
-    pub async fn kill_intent(&mut self, source_name: String, target_id: UniverseId) {
+    pub async fn collapsed_intent(
+        &mut self,
+        target_id: UniverseId,) {
         let target_name = self.get_universe_name_by_id(&target_id);
+        let target_handle = self.existing_universes.get(&target_id).unwrap();
 
-        self.send_universe_command(target_name, UniverseCommand::InjectEvent(UniverseEvent::Crash)).await;
+        Log::collapsed(&target_name, target_handle.color);
 
-        // todo: log(format!("[{}] attacked [{}] -{} HP", source_name, target_name, damage), Some(*color));
+        // send the universe collapse command
+        self.send_universe_command(target_name, UniverseCommand::Shutdown).await;
+
+        // todo: remove universe from self
     }
 
-    pub async fn roll_brothers_enemies_on_new_universe(&mut self, universe_handle: UniverseHandle) {
+    pub async fn roll_brothers_enemies_on_new_universe(&mut self, universe_handle: &UniverseHandle) {
         if self.existing_universes.len() == 0 {
             // this is the first universe
             return;
         }
         
         // roll enemy or friend on random
-        let all_universes_ids = self.existing_universes.keys().cloned();
+        let all_universes_ids: Vec<UniverseId> = self.existing_universes.keys().cloned().collect();
 
-        // Send command to set relationships (we’ll add this command next)
+        // Send command to set relationships
         for target_id in all_universes_ids {
+            // 50/50 enemy or brother
             if rand::random() {
-                // 50/50 enemy or brother
-                let _ = universe_handle.commander_tx.try_send(
-                    UniverseCommand::SetRelationship(target_id, Relationship::Enemy)
-                );
+                self.set_relationship(&universe_handle, target_id, Relationship::Enemy).await;
             } else {
-                let _ = universe_handle.commander_tx.try_send(
-                    UniverseCommand::SetRelationship(target_id, Relationship::Brother)
-                );
+                self.set_relationship(&universe_handle, target_id, Relationship::Brother).await;
             }
         }
+    }
+
+    async fn set_relationship(&mut self, universe_handle: &UniverseHandle, target_id: UniverseId, relationship: Relationship) {
+        let _ = universe_handle.commander_tx.try_send(
+            UniverseCommand::SetRelationship(target_id, relationship)
+        );
+        let _ = self.get_universe_handle_by_name(self.get_universe_name_by_id(&target_id).as_str()).unwrap()
+            .commander_tx.try_send(
+            UniverseCommand::SetRelationship(universe_handle.handle_id, relationship)
+        );
+
+        // log
+        Log::info("set_relationship");
     }
 
     /// for when shutting down system
