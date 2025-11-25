@@ -5,43 +5,17 @@ use crate::universe;
 use crate::universe::{UniverseCommand, UniverseHandle, UniverseId, UniverseEvent};
 
 pub struct UserSupervisor {
-    supervisor: SupervisorHandle,
+    pub(crate) supervisor: SupervisorHandle,
 }
 
 impl UserSupervisor {
     pub fn new() -> Self {
-        UserSupervisor {
-            supervisor: SupervisorHandle::new(),
-        }
-    }
-
-    pub async fn main_loop(&mut self) {
         // todo: change good morning to be good - anything
         println!("Good Morning - Supervisor Initialized.");
 
-        loop {
-            print_main_menu();
-
-            let input = match menu_read_input().await {
-                Ok(input) => input,
-                Err(_) => continue,
-            };
-
-            // Normalize input for matching key main menu words
-            match input.trim().to_lowercase().as_str() {
-                "new" => self.new_universe().await,
-                "get" => self.handle_list_universes(),
-                "command" => self.handle_manage_universe().await,
-                "shutdown" | "exit" => {
-                    println!("Shutting down system...");
-                    self.shut_down_all().await;
-                    break;
-                }
-                _ => println!("Unknown option. Please type 'New', 'Get', 'Command', or 'Shutdown'."),
-            }
+        UserSupervisor {
+            supervisor: SupervisorHandle::new(),
         }
-
-        self.supervisor.wait_for_all_tasks_to_finish().await;
     }
 
     // --- Sub-Menus ---
@@ -51,7 +25,7 @@ impl UserSupervisor {
 
         // Verify existence before entering loop
         if self.supervisor.get_universe_handle_by_name(&name).is_err() {
-            println!("Universe '{}' not found.", name);
+            // println!("Universe '{}' not found.", name);
             return;
         }
 
@@ -78,7 +52,7 @@ impl UserSupervisor {
 
             match command {
                 UniverseCommand::UnknownCommand => {
-                    println!("Unknown command. Type 'Start', 'Stop', 'Event', 'State', or 'Shutdown'.");
+                    // println!("Unknown command. Type 'Start', 'Stop', 'Event', 'State', or 'Shutdown'.");
                 }
                 UniverseCommand::Shutdown => {
                     // Send shutdown and exit this menu because the universe will be gone
@@ -88,7 +62,7 @@ impl UserSupervisor {
                     self.supervisor.universes_via_name.remove(&name);
                     self.supervisor.existing_universes.remove(&id);
 
-                    println!("Exiting management for '{}'", name);
+                    // println!("Exiting management for '{}'", name);
                     break;
                 }
                 _ => {
@@ -119,7 +93,7 @@ impl UserSupervisor {
             // in universe_event.rs doesn't capture separately (it just clones the command name).
             // We handle it manually here for better UX.
             if trimmed.eq_ignore_ascii_case("changestate") {
-                println!("Enter new state string:");
+                // println!("Enter new state string:");
                 let state_val = menu_read_input().await.unwrap_or_default();
                 let event = UniverseEvent::ChangeState(state_val);
                 self.supervisor.send_universe_command(name.to_string(), UniverseCommand::InjectEvent(event)).await;
@@ -141,22 +115,19 @@ impl UserSupervisor {
     }
 
     // --- Helpers ---
-    async fn new_universe(&mut self) {
-        let name = menu_request_universe_name("Create").await;
-        if name.is_empty() { return; }
-
+    pub(crate) async fn new_universe(&mut self, name: String) {
         self.supervisor.add_new_universe(name.clone());
-        println!("Universe '{}' created.", name);
+        // println!("Universe '{}' created.", name);
     }
 
-    fn handle_list_universes(&self) {
-        println!("\n--- Existing Universes ---");
+    pub(crate) fn handle_list_universes(&self) {
+        // println!("\n--- Existing Universes ---");
         let universes = self.supervisor.get_all_existing_universes();
         if universes.is_empty() {
-            println!("(No universes found)");
+            // println!("(No universes found)");
         } else {
             for name in universes {
-                println!("- {}", name);
+                // println!("- {}", name);
             }
         }
     }
@@ -212,14 +183,14 @@ impl SupervisorHandle {
         let universe = match self.get_universe_handle_by_name(&universe_name) {
             Ok(u) => u,
             Err(e) => {
-                eprintln!("Lookup error: {}", e);
+                // eprintln!("Lookup error: {}", e);
                 return;
             }
         };
 
         // use universe to send command
         if let Err(e) = universe.commander_tx.send(command).await {
-            eprintln!("Failed to send command: {}", e);
+            // eprintln!("Failed to send command: {}", e);
         }
     }
 
