@@ -1,4 +1,5 @@
-﻿use crate::supervisor::supervisor::SupervisorHandle;
+﻿use crate::supervisor::log_messages::Log;
+use crate::supervisor::supervisor::SupervisorHandle;
 use crate::universe::{UniverseCommand, UniverseId, UniverseIntent};
 
 pub struct UserSupervisor {
@@ -17,14 +18,14 @@ impl UserSupervisor {
 
     // --- Helpers ---
     pub(crate) async fn new_universe(&mut self, name: String) {
-        self.supervisor.add_new_universe(name.clone());
+        self.supervisor.add_new_universe(name.clone()).await;
     }
 
     pub(crate) fn get_list_universes(&self) -> Vec<&String> {
         self.supervisor.get_all_existing_universes()
     }
 
-    async fn shut_down_all(&mut self) {
+    pub(crate) async fn shut_down_all(&mut self) {
         for (universe_name, _universe) in self.supervisor.universes_via_name.iter() {
             self.supervisor.send_universe_command(universe_name.clone(), UniverseCommand::Shutdown).await;
         }
@@ -32,7 +33,7 @@ impl UserSupervisor {
 
     /// gets called in the main loop, this is the supervisor acting as a server,
     /// checking for incoming messages (intents) from the universes and processing them.
-    async fn process_universe_events(&mut self) {
+    pub(crate) async fn process_universe_events(&mut self) {
         // collect all intents
         let mut pending_intents: Vec<(UniverseId, UniverseIntent)> = Vec::new();
 
