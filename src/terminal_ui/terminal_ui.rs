@@ -11,7 +11,7 @@ use crossterm::{
 };
 use std::io::{self, Stdout};
 
-use crate::supervisor::supervisor::UserSupervisor;
+use crate::supervisor::user_supervisor::UserSupervisor;
 use crate::universe::{UniverseCommand, UniverseEvent};
 
 pub struct TerminalUI<'a> {
@@ -44,6 +44,7 @@ impl<'a> TerminalUI<'a> {
 
     pub async fn run(&mut self) {
         let mut terminal = self.init_terminal();
+
         loop {
             self.draw(&mut terminal);
             if let Some(cmd) = self.poll_input().unwrap() {
@@ -52,6 +53,7 @@ impl<'a> TerminalUI<'a> {
                 }
             }
         }
+
         self.shutdown_terminal(&mut terminal);
     }
 
@@ -158,7 +160,7 @@ impl<'a> TerminalUI<'a> {
         match mode {
             UiMode::Main => self.handle_main(parts).await,
             UiMode::Manage { name } => self.handle_manage(name.clone(), parts).await,
-            UiMode::EventMenu { name } => self.handle_event(name.clone(), parts).await,
+            UiMode::EventMenu { name } => self.handle_user_event(name.clone(), parts).await,
         }
     }
 
@@ -190,7 +192,7 @@ impl<'a> TerminalUI<'a> {
                 }
             }
             "list" => {
-                let list = self.supervisor.handle_list_universes();
+                let list = self.supervisor.get_list_universes();
                 self.log(format!("Universes: {:?}", list));
             }
             "shutdown" => return true,
@@ -203,16 +205,20 @@ impl<'a> TerminalUI<'a> {
         match p[0].to_lowercase().as_str() {
             "back" => self.mode = UiMode::Main,
             "resume" => {
+                self.log(format!("Resuming {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Start).await;
             }
             "pause" => {
+                self.log(format!("Pausing {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Stop).await;
             }
             "event" => self.mode = UiMode::EventMenu { name },
             "state" => {
+                self.log(format!("Getting State of {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::RequestState()).await;
             }
             "collapse" => {
+                self.log(format!("Collapsing {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Shutdown).await;
             }
             _ => self.log("Unknown manage command".into()),
@@ -220,37 +226,35 @@ impl<'a> TerminalUI<'a> {
         false
     }
 
-    async fn handle_event(&mut self, name: String, p: Vec<&str>) -> bool {
+    async fn handle_user_event(&mut self, name: String, p: Vec<&str>) -> bool {
         match p[0].to_lowercase().as_str() {
             "back" => self.mode = UiMode::Manage { name },
             "shatter" => {
+                let strength = 20;
+                
+                // todo: log user shattered universe {}
+
                 self.supervisor.supervisor.send_universe_command(
                     name.clone(),
-                    UniverseCommand::InjectEvent(UniverseEvent::Shatter),
+                    UniverseCommand::InjectEvent(UniverseEvent::Shatter(strength)),
                 ).await;
             }
             "crash" => {
+                // todo: log user crashed universe {}
+
                 self.supervisor.supervisor.send_universe_command(
                     name.clone(),
-                    UniverseCommand::InjectEvent(UniverseEvent::Crash(0)),
+                    UniverseCommand::InjectEvent(UniverseEvent::Crash),
                 ).await;
             }
             "heal" => {
+                let strength = 20;
+                
+                // todo: log user healed universe {}
+
                 self.supervisor.supervisor.send_universe_command(
                     name.clone(),
-                    UniverseCommand::InjectEvent(UniverseEvent::Heal(0)),
-                ).await;
-            }
-            "ping" => {
-                self.supervisor.supervisor.send_universe_command(
-                    name.clone(),
-                    UniverseCommand::InjectEvent(UniverseEvent::Ping(0)),
-                ).await;
-            }
-            "pong" => {
-                self.supervisor.supervisor.send_universe_command(
-                    name.clone(),
-                    UniverseCommand::InjectEvent(UniverseEvent::Pong(0)),
+                    UniverseCommand::InjectEvent(UniverseEvent::Heal(strength)),
                 ).await;
             }
             _ => self.log("Unknown event command".into()),
