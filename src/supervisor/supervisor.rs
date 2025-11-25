@@ -181,7 +181,7 @@ impl SupervisorHandle {
             // this is the first universe
             return;
         }
-        
+
         // roll enemy or friend on random
         let all_universes_ids: Vec<UniverseId> = self.existing_universes.keys().cloned().collect();
 
