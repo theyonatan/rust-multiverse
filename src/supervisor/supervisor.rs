@@ -155,10 +155,25 @@ impl SupervisorHandle {
 
         Log::collapsed(&target_name, target_handle.color);
 
+        // broadcast everyone it collapsed
+        self.broadcast_collapsed_universe(target_id);
+
         // send the universe collapse command
         self.send_universe_command(target_name, UniverseCommand::Shutdown).await;
 
-        // todo: remove universe from self
+        // remove from own hashmaps
+        self.existing_universes.remove(&target_id);
+        self.universes_via_name.retain(|_, &mut id| id != target_id);
+    }
+
+    fn broadcast_collapsed_universe(&self, collapsed_id: UniverseId) {
+        for (id, survivor_handle) in &self.existing_universes {
+            if *id != collapsed_id {
+                let _ = survivor_handle.commander_tx.try_send(
+                    UniverseCommand::InjectEvent(UniverseEvent::UniverseCollapsed(collapsed_id))
+                );
+            }
+        }
     }
 
     pub async fn roll_brothers_enemies_on_new_universe(&mut self, universe_handle: &UniverseHandle) {

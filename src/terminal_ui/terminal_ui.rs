@@ -1,7 +1,8 @@
 ﻿use ratatui::{
     backend::CrosstermBackend,
+    text::{Span, Line},
     Terminal,
-    widgets::{Block, Borders, Paragraph, List, ListItem, ListState},
+    widgets::{Block, Borders, Paragraph, ListState},
     layout::{Layout, Constraint, Direction},
 };
 use crossterm::{
@@ -10,7 +11,7 @@ use crossterm::{
     terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::{self, Stdout};
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast;
 use crate::logging::subscribe;
 use crate::supervisor::log_messages::*;
 use crate::supervisor::user_supervisor::UserSupervisor;
@@ -19,8 +20,8 @@ use crate::universe::{UniverseCommand, UniverseEvent};
 pub struct TerminalUI<'a> {
     supervisor: &'a mut UserSupervisor,
     input: String,
-    logs: Vec<String>,
-    log_receiver: Receiver<String>,
+    logs: Vec<Vec<Span<'static>>>,
+    log_receiver: broadcast::Receiver<Vec<Span<'static>>>,
     mode: UiMode,
     log_state: ListState,
 }
@@ -61,7 +62,7 @@ impl<'a> TerminalUI<'a> {
             // collect logs for terminal
             while let Ok(line) = self.log_receiver.try_recv() {
                 self.logs.push(line);
-                if self.logs.len() > 300 {
+                if self.logs.len() > 1000 {
                     self.logs.remove(0);
                 }
             }
@@ -109,21 +110,26 @@ impl<'a> TerminalUI<'a> {
             f.render_widget(input, left[2]);
 
             // Right: logs
-            let log_items: Vec<ListItem> = self
-                .logs
-                .iter()
-                .map(|line| ListItem::new(line.as_str()))
+            let log_lines: Vec<Line> = self.logs.iter()
+                .map(|spans| Line::from(spans.clone()))
                 .collect();
 
-            let list = List::new(log_items)
-                .block(Block::default().borders(Borders::ALL).title("Logs"));
+            // Calculate how much to scroll to show bottom
+            let area = chunks[1];
+            let inner_height = area.height.saturating_sub(2) as usize; // minus border
+            let total_lines = log_lines.len();
+            let scroll_offset = if total_lines > inner_height {
+                (total_lines - inner_height) as u16
+            } else {
+                0
+            };
 
-            // Keep selection at the bottom (newest entry)
-            if !self.logs.is_empty() {
-                self.log_state.select(Some(self.logs.len().saturating_sub(1)));
-            }
+            let logs_paragraph = Paragraph::new(log_lines)
+                .block(Block::default().borders(Borders::ALL).title("Logs"))
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((scroll_offset, 0));
 
-            f.render_stateful_widget(list, chunks[1], &mut self.log_state);
+            f.render_widget(logs_paragraph, chunks[1]);
         });
     }
 

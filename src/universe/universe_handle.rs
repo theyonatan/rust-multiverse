@@ -116,6 +116,13 @@ fn handle_given_event(event: &UniverseEvent, universe: &mut Universe) {
         UniverseEvent::Heal(strength) => {
             universe.heal(*strength);
         }
-        _ => {}
+        UniverseEvent::UniverseCollapsed(collapsed_id) => {
+            if universe.is_brother(*collapsed_id) {
+                universe.brothers.remove(&collapsed_id);
+            }
+            if universe.is_enemy(*collapsed_id) {
+                universe.enemies.remove(&collapsed_id);
+            }
+        }
     }
 }
