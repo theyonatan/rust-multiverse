@@ -27,6 +27,24 @@ impl Log {
         log(spans);
     }
 
+    pub fn relationship_announcement(
+        name1: &str, color1: RGB8,
+        name2: &str, color2: RGB8,
+        relation: &str,
+        subtitle: &str,
+    ) {
+
+        let spans = vec![
+            Span::styled("Relationship: ".to_owned(), Style::default().fg(Color::Cyan)),
+            Span::styled(name1.to_owned(), Style::default().fg(Self::color(color1))),
+            Span::raw(" and ".to_owned()),
+            Span::styled(name2.to_owned(), Style::default().fg(Self::color(color2))),
+            Span::styled(format!(" are {relation} ").to_owned(), Style::default().fg(Color::Yellow)),
+            Span::styled(format!("{subtitle}").to_owned(), Style::default().fg(Color::DarkGray)),
+        ];
+        log(spans);
+    }
+
     pub fn attack(source: &str, source_color: RGB8, target: &str, target_color: RGB8, dmg: i32) {
         let spans = vec![
             Span::raw("[".to_owned()),

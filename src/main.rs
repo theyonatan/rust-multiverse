@@ -17,3 +17,4 @@ async fn main() {
 
 
 // TODO: Replace all .unwrap() statements with ? or a real handling case.
+// todo: check if I should replace all .clone with .to_owned()

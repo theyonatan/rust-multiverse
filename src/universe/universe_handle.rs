@@ -13,6 +13,7 @@ use crate::universe::universe_event::UniverseEvent;
 
 pub struct UniverseHandle {
     pub(crate) handle_id: UniverseId,
+    pub(crate) own_name: String,
     pub(crate) color: RGB8,
     pub(crate) commander_tx: Sender<UniverseCommand>,
     pub(crate) universe_task_handle: tokio::task::JoinHandle<()>,
@@ -20,7 +21,7 @@ pub struct UniverseHandle {
 }
 
 impl UniverseHandle {
-    fn new(mut universe: Universe, intent_rx: UnboundedReceiver<UniverseIntent>, color: Rgb<u8>) -> UniverseHandle {
+    fn new(mut universe: Universe, intent_rx: UnboundedReceiver<UniverseIntent>, own_name: String, color: Rgb<u8>) -> UniverseHandle {
         let handle_id = universe.id.clone();
 
         let (commander_tx, mut command_rx) = channel::<UniverseCommand>(10);
@@ -49,6 +50,7 @@ impl UniverseHandle {
 
         UniverseHandle {
             handle_id,
+            own_name,
             color,
             commander_tx,
             universe_task_handle,
@@ -57,7 +59,7 @@ impl UniverseHandle {
     }
 }
 
-pub fn create_universe_handle() -> UniverseHandle {
+pub fn create_universe_handle(name: String) -> UniverseHandle {
     let (intent_tx, intent_rx) = unbounded_channel::<UniverseIntent>();
 
     let color = RGB8::new(
@@ -68,7 +70,7 @@ pub fn create_universe_handle() -> UniverseHandle {
 
     let universe = Universe::new(intent_tx);
 
-    UniverseHandle::new(universe, intent_rx, color)
+    UniverseHandle::new(universe, intent_rx, name, color)
 }
 
 fn handle_given_command(command: &UniverseCommand, universe: &mut Universe) {

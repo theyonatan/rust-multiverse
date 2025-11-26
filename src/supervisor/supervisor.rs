@@ -63,7 +63,7 @@ impl SupervisorHandle {
     ///------------------------
     pub async fn add_new_universe(&mut self, name: String) {
         // new universe
-        let universe_handle = universe::create_universe_handle();
+        let universe_handle = universe::create_universe_handle(name.to_owned());
 
         // Log
         Log::created(&name, universe_handle.color);
@@ -206,9 +206,37 @@ impl SupervisorHandle {
         );
 
         // log
-        Log::info("set_relationship");
+        self.log_relationship(universe_handle, target_id, relationship);
     }
 
+    fn log_relationship(&mut self, universe_handle: &UniverseHandle, target_id: UniverseId, relationship: Relationship) {
+        let own_name = universe_handle.own_name.clone();
+        let target_name = self.get_universe_name_by_id(&target_id);
+
+        let new_color = universe_handle.color;
+        let target_color = self.get_color_by_id(&target_id);
+
+        match relationship {
+            Relationship::Enemy => {
+                Log::relationship_announcement(
+                    &target_name, target_color,
+                    &own_name, new_color,
+                    "ENEMIES",
+                    "⚔️ War has been declared",
+                );
+            }
+            Relationship::Brother => {
+                Log::relationship_announcement(
+                    &target_name, target_color,
+                    &own_name, new_color,
+                    "BROTHERS",
+                    "An alliance forged in the void",
+                );
+            }
+        }
+    }
+
+    // todo: wtf
     /// for when shutting down system
     pub async fn wait_for_all_tasks_to_finish(&mut self) {
         for (_id, universe) in self.existing_universes.drain() {
