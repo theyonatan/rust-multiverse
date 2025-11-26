@@ -1,4 +1,4 @@
-﻿use crate::supervisor::log_messages::Log;
+﻿use chrono::{Local, Timelike};
 use crate::supervisor::supervisor::SupervisorHandle;
 use crate::universe::{UniverseCommand, UniverseId, UniverseIntent};
 
@@ -8,12 +8,25 @@ pub struct UserSupervisor {
 
 impl UserSupervisor {
     pub fn new() -> Self {
-        // todo: change good morning to be good - anything
-        println!("Good Morning - Supervisor Initialized.");
+        Self::print_greetings_message();
 
         UserSupervisor {
             supervisor: SupervisorHandle::new(),
         }
+    }
+
+    fn print_greetings_message() {
+        let hour = Local::now().hour();
+
+        let msg = match hour {
+            5..=12 => "Good Morning",
+            13..=17 => "Good Afternoon",
+            18..=21 => "Good Evening",
+            _ => "Good Night",
+        };
+
+        println!("{} - Supervisor Initialized.", msg);
+        println!("Have a good rest of your day.");
     }
 
     // --- Helpers ---
@@ -29,6 +42,8 @@ impl UserSupervisor {
         for (universe_name, _universe) in self.supervisor.universes_via_name.iter() {
             self.supervisor.send_universe_command(universe_name.clone(), UniverseCommand::Shutdown).await;
         }
+
+        self.supervisor.wait_for_all_tasks_to_finish().await;
     }
 
     /// gets called in the main loop, this is the supervisor acting as a server,

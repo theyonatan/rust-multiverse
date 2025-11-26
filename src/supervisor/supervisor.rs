@@ -236,7 +236,6 @@ impl SupervisorHandle {
         }
     }
 
-    // todo: wtf
     /// for when shutting down system
     pub async fn wait_for_all_tasks_to_finish(&mut self) {
         for (_id, universe) in self.existing_universes.drain() {
