@@ -62,6 +62,12 @@ impl SupervisorHandle {
     /// manage from UI
     ///------------------------
     pub async fn add_new_universe(&mut self, name: String) {
+        // check if exists
+        if self.universes_via_name.contains_key(&name) {
+            Log::info(format!("Universe {} already exists!", name));
+            return;
+        }
+        
         // new universe
         let universe_handle = universe::create_universe_handle(name.to_owned());
 

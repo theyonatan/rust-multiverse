@@ -11,7 +11,6 @@ use crossterm::{
     terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::{self, Stdout};
-use ratatui::style::Style;
 use tokio::sync::broadcast;
 use crate::logging::subscribe;
 use crate::supervisor::log_messages::*;
@@ -94,7 +93,7 @@ impl<'a> TerminalUI<'a> {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(f.size());
+                .split(f.area());
 
             // Left: commands + input
             let left = Layout::default()
