@@ -206,6 +206,12 @@ impl<'a> TerminalUI<'a> {
             "manage" => {
                 if parts.len() > 1 {
                     let name = parts[1].trim().to_string();
+                    
+                    if !self.supervisor.supervisor.does_universe_exist(name.clone()) {
+                        Log::info(format!("'{}' not found", name));
+                        return false;
+                    }
+                    
                     Log::info(format!("Now managing '{}'", name));
                     self.mode = UiMode::Manage { name };
                 } else {

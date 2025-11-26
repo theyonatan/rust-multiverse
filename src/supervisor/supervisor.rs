@@ -242,6 +242,10 @@ impl SupervisorHandle {
         }
     }
 
+    pub fn does_universe_exist(&self, universe_name: String) -> bool {
+        self.universes_via_name.contains_key(&universe_name)
+    }
+    
     /// for when shutting down system
     pub async fn wait_for_all_tasks_to_finish(&mut self) {
         for (_id, universe) in self.existing_universes.drain() {
