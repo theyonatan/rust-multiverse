@@ -6,9 +6,7 @@ use crate::universe::UniverseId;
 pub enum UniverseCommand {
     Start, // Resume
     Stop, // Pause
-    InjectEvent(UniverseEvent), // TODO: Supervisor sends an event to the Universe which he unpacks and deals with.
-    RequestState(), // TODO: Supervisor sends a request to get an event, the Universe somehow returns a response.
+    InjectEvent(UniverseEvent),
     Shutdown, // Shuts down entirely
     SetRelationship(UniverseId, Relationship),
-    UnknownCommand,
 }

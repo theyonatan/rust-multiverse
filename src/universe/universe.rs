@@ -31,10 +31,6 @@ impl Universe {
     pub(crate) fn step(&mut self) {
         // death check
         if !self.executes { return; }
-        if self.hp <= 0 {
-            self.executes = false;
-            return;
-        }
 
         // auto combat every 4 ticks
         if self.tick % 4 == 0 {
@@ -65,8 +61,9 @@ impl Universe {
     // helper utils for fighting stuff
     pub fn take_damage(&mut self, amount: i32) {
         self.hp -= amount;
-        if self.hp < 0 {
+        if self.hp <= 0 {
             self.hp = 0;
+            self.executes = false;
 
             self.collapse();
         }

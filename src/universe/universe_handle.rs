@@ -43,12 +43,7 @@ impl UniverseHandle {
 
                 }
 
-                if universe.executes == true && universe.hp > 0 {
-                    (&mut universe).step();
-                } else if universe.hp <= 0 {
-                    // todo: alert supervisor that universe died, which alerts other universes as well.
-                    break;
-                }
+                (&mut universe).step();
             }
         });
 
@@ -87,9 +82,6 @@ fn handle_given_command(command: &UniverseCommand, universe: &mut Universe) {
         UniverseCommand::InjectEvent(event) => {
             handle_given_event(event, universe);
         }
-        UniverseCommand::RequestState() => {
-            // todo: log state
-        }
         UniverseCommand::SetRelationship(id, relationship) => {
             match relationship {
                 Relationship::Enemy => { universe.enemies.insert(id.clone()); }
@@ -97,10 +89,8 @@ fn handle_given_command(command: &UniverseCommand, universe: &mut Universe) {
             }
         }
         UniverseCommand::Shutdown => {
+            handle_given_event(&UniverseEvent::Crash, universe);
             return;
-        }
-        UniverseCommand::UnknownCommand => {
-
         }
     }
 }

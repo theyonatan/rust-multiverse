@@ -98,7 +98,7 @@ impl<'a> TerminalUI<'a> {
             // Left: commands + input
             let left = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(6), Constraint::Min(1), Constraint::Length(3)])
+                .constraints([Constraint::Length(10), Constraint::Min(1), Constraint::Length(3)])
                 .split(chunks[0]);
 
             let help = Paragraph::new(self.mode_text())
@@ -236,10 +236,6 @@ impl<'a> TerminalUI<'a> {
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Stop).await;
             }
             "event" => self.mode = UiMode::EventMenu { name },
-            "state" => {
-                Log::info(format!("Getting State of {}", name));
-                self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::RequestState()).await;
-            }
             "collapse" => {
                 Log::info(format!("Collapsing {}", name));
                 self.supervisor.supervisor.send_universe_command(name.clone(), UniverseCommand::Shutdown).await;
