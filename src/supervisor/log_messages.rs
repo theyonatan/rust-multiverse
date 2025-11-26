@@ -1,45 +1,69 @@
-﻿use rgb::RGB8;
+﻿use ratatui::text::Span;
+use ratatui::style::{Color, Style};
+use rgb::RGB8;
 use crate::logging::log;
 
 pub struct Log;
 
 impl Log {
-    fn rgb(r: u8, g: u8, b: u8) -> String {
-        format!("\x1b[38;2;{};{};{}m", r, g, b)
+    fn color(rgb: RGB8) -> Color {
+        Color::Rgb(rgb.r, rgb.g, rgb.b)
     }
-    fn reset() -> &'static str { "\x1b[0m" }
-    fn red() -> &'static str { "\x1b[31m" }
-    fn green() -> &'static str { "\x1b[32m" }
-    fn gray() -> &'static str { "\x1b[90m" }
 
     pub fn info(msg: impl Into<String>) {
-        log(format!("> {}{}", msg.into(), Self::reset()));
-    }
-
-    pub fn attack(source: &str, source_color: RGB8, target: &str, target_color: RGB8, dmg: i32) {
-        let s = Self::rgb(source_color.r, source_color.g, source_color.b);
-        let t = Self::rgb(target_color.r, target_color.g, target_color.b);
-        log(format!("[{s}{source}{} → {t}{target}{}] {}-{} HP{}", Self::reset(), Self::reset(), Self::red(), dmg, Self::reset()));
-    }
-
-    pub fn heal(source: &str, source_color: RGB8, target: &str, target_color: RGB8, amount: i32) {
-        let s = Self::rgb(source_color.r, source_color.g, source_color.b);
-        let t = Self::rgb(target_color.r, target_color.g, target_color.b);
-        log(format!("[{s}{source}{}] healed [{t}{target}{}] {}+{} HP{}", Self::reset(), Self::reset(), Self::green(), amount, Self::reset()));
-    }
-
-    pub fn collapsed(name: &str, color: RGB8) {
-        let c = Self::rgb(color.r, color.g, color.b);
-        log(format!("☠ {c}{name}{} has COLLAPSED{}", Self::reset(), Self::gray()));
+        let msg = msg.into();
+        let spans = vec![
+            Span::styled("> ".to_owned(), Style::default().fg(Color::Cyan)),
+            Span::raw(msg),
+        ];
+        log(spans);
     }
 
     pub fn created(name: &str, color: RGB8) {
-        let c = Self::rgb(color.r, color.g, color.b);
-        log(format!("> Created universe {c}{name}{}", Self::reset()));
+        let spans = vec![
+            Span::styled("> Created universe ".to_owned(), Style::default().fg(Color::Cyan)),
+            Span::styled(name.to_owned(), Style::default().fg(Self::color(color))),
+        ];
+        log(spans);
+    }
+
+    pub fn attack(source: &str, source_color: RGB8, target: &str, target_color: RGB8, dmg: i32) {
+        let spans = vec![
+            Span::raw("[".to_owned()),
+            Span::styled(source.to_owned(), Style::default().fg(Self::color(source_color))),
+            Span::raw("] → [".to_owned()),
+            Span::styled(target.to_owned(), Style::default().fg(Self::color(target_color))),
+            Span::styled(format!("] −{dmg} HP"), Style::default().fg(Color::Red)),
+        ];
+        log(spans);
+    }
+
+    pub fn heal(source: &str, source_color: RGB8, target: &str, target_color: RGB8, amount: i32) {
+        let spans = vec![
+            Span::raw("[".to_owned()),
+            Span::styled(source.to_owned(), Style::default().fg(Self::color(source_color))),
+            Span::raw("] healed [".to_owned()),
+            Span::styled(target.to_owned(), Style::default().fg(Self::color(target_color))),
+            Span::styled(format!("] +{amount} HP"), Style::default().fg(Color::Green)),
+        ];
+        log(spans);
+    }
+
+    pub fn collapsed(name: &str, color: RGB8) {
+        let spans = vec![
+            Span::styled("☠ ".to_owned(), Style::default().fg(Color::Red)),
+            Span::styled(name.to_owned(), Style::default().fg(Self::color(color))),
+            Span::styled(" has COLLAPSED".to_owned(), Style::default().fg(Color::DarkGray)),
+        ];
+        log(spans);
     }
 
     pub fn user_action(actor: &str, action: &str, target: &str, color: RGB8) {
-        let c = Self::rgb(color.r, color.g, color.b);
-        log(format!("> {c}{actor}{} {action} {target}", Self::reset()));
+        let spans = vec![
+            Span::styled("> ".to_owned(), Style::default().fg(Color::Cyan)),
+            Span::styled(actor.to_owned(), Style::default().fg(Self::color(color))),
+            Span::raw(format!(" {action} {target}")),
+        ];
+        log(spans);
     }
 }

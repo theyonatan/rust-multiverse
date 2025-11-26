@@ -1,7 +1,7 @@
 ﻿use std::collections::HashSet;
-use rand::{rng, thread_rng, Rng};
+use rand::{rng, Rng};
 use tokio::sync::mpsc::UnboundedSender;
-use crate::universe::{new_universe_id, UniverseHandle, UniverseId, UniverseIntent};
+use crate::universe::{new_universe_id, UniverseId, UniverseIntent};
 
 pub struct Universe {
     pub(crate) id: UniverseId,
