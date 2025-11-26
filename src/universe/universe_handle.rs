@@ -43,6 +43,10 @@ impl UniverseHandle {
 
                 }
 
+                if universe.is_collapsed() {
+                    return
+                }
+
                 (&mut universe).step();
             }
         });
@@ -90,7 +94,9 @@ fn handle_given_command(command: &UniverseCommand, universe: &mut Universe) {
             }
         }
         UniverseCommand::Shutdown => {
-            handle_given_event(&UniverseEvent::Crash, universe);
+            universe.executes = false;
+            universe.shutdown();
+            
             return;
         }
     }

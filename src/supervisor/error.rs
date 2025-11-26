@@ -6,8 +6,6 @@ use crate::universe::UniverseId;
 pub enum UniverseLookupError {
     IdNotFoundForName(String),
     UniverseNotFoundForId(UniverseId),
-    UniverseAlreadyExists(String),
-    UniverseIsDead(UniverseId),
 }
 
 impl fmt::Display for UniverseLookupError {
@@ -18,12 +16,6 @@ impl fmt::Display for UniverseLookupError {
             }
             UniverseLookupError::UniverseNotFoundForId(id) => {
                 write!(f, "Universe with ID '{}' not found", id)
-            }
-            UniverseLookupError::UniverseAlreadyExists(name) => {
-                write!(f, "Universe '{}' already exists", name)
-            }
-            UniverseLookupError::UniverseIsDead(id) => {
-                write!(f, "Universe '{}' has COLLAPSED and is no more", id)
             }
         }
     }

@@ -7,6 +7,7 @@ pub struct Universe {
     pub(crate) id: UniverseId,
     pub(crate) intent_tx: UnboundedSender<UniverseIntent>,
     pub(crate) executes: bool,
+    pub(crate) collapsed: bool,
     pub(crate) tick: i32,
     pub(crate) hp: i32,
     pub(crate) enemies: HashSet<UniverseId>,
@@ -21,6 +22,7 @@ impl Universe {
             id,
             intent_tx,
             executes: true,
+            collapsed: false,
             tick: 0,
             hp: 100,
             enemies: Default::default(),
@@ -85,5 +87,13 @@ impl Universe {
 
     pub fn is_brother(&self, id: UniverseId) -> bool {
         self.brothers.contains(&id)
+    }
+
+    pub fn is_collapsed(&self) -> bool {
+        self.collapsed
+    }
+
+    pub fn shutdown(&mut self) {
+        self.collapsed = true;
     }
 }

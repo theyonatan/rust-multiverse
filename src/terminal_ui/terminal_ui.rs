@@ -23,7 +23,6 @@ pub struct TerminalUI<'a> {
     logs: Vec<Vec<Span<'static>>>,
     log_receiver: broadcast::Receiver<Vec<Span<'static>>>,
     mode: UiMode,
-    log_state: ListState,
 }
 
 #[derive(Clone)]
@@ -43,7 +42,6 @@ impl<'a> TerminalUI<'a> {
             logs: vec![],
             log_receiver: subscribe(),
             mode: UiMode::Main,
-            log_state,
         }
     }
 
