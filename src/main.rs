@@ -4,7 +4,6 @@ mod terminal_ui;
 mod logging;
 
 use terminal_ui::TerminalUI;
-
 use supervisor::user_supervisor::UserSupervisor;
 
 #[tokio::main]
