@@ -1,4 +1,4 @@
-Rust Multiverse:
+# Rust Multiverse:
 
 a task (tokio) based project where you, the user, spawns multiple universes that fight, friend, communicate with each other.
 covers different intermediate rust concepts.
